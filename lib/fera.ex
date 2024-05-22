@@ -29,12 +29,35 @@ defmodule Fera do
 
   end
 
+  defmodule SecretSanitizer do
+    @behaviour Tesla.Middleware
+
+    @impl true
+    def call(req, next, _options) do
+      {ret, env} = Tesla.run(req, next)
+
+      {ret, Map.update!(env, :__client__, fn client ->
+        update_in(env.__client__.pre, fn pre ->
+          Enum.map(pre, fn
+            {Tesla.Middleware.Headers, :call, [[{"secret-key", _}]]} ->
+              {Tesla.Middleware.Headers, :call, [[{"secret-key", "sk_redacted"}]]}
+
+            val ->
+              val
+          end)
+        end)
+      end)}
+    end
+
+  end
+
   def new(secret_key) do
     Fera.Connection.new()
     |> Map.update!(:pre, fn middleware ->
       middleware ++ [
         {Tesla.Middleware.Headers, :call, [[{"secret-key", secret_key}]]},
-        {Fera.RateLimiter, :call, [[]]}
+        {Fera.RateLimiter, :call, [[]]},
+        {Fera.SecretSanitizer, :call, [[]]},
       ]
     end)
   end
